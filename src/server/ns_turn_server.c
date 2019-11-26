@@ -3294,6 +3294,22 @@ static void resume_processing_after_username_check(int success,  int oauth, int 
 	}
 }
 
+static void log_nonce(char *log_label, uint8_t *nonce)
+{
+	int i;
+
+	TURN_LOG_FUNC(TURN_LOG_LEVEL_INFO,
+		"%s: %s: [", __FUNCTION__, log_label);
+
+	for (i=0; i < NONCE_MAX_SIZE; i++) {
+		TURN_LOG_FUNC(TURN_LOG_LEVEL_INFO,
+			"%u, ",
+			nonce[i]);
+	}
+
+	TURN_LOG_FUNC(TURN_LOG_LEVEL_INFO, "]\n");
+}
+
 static int check_stun_auth(turn_turnserver *server,
 			ts_ur_super_session *ss, stun_tid *tid, int *resp_constructed,
 			int *err_code, 	const uint8_t **reason,
@@ -3322,12 +3338,21 @@ static int check_stun_auth(turn_turnserver *server,
 		if(*(server->stale_nonce)) {
 			if(turn_time_before(ss->nonce_expiration_time,server->ctime)) {
 				generate_new_nonce = 1;
+
+				TURN_LOG_FUNC(TURN_LOG_LEVEL_INFO,
+				"%s: Expired nonce! Expiration time: %04x Current time: %04x\n",
+				__FUNCTION__, (unsigned int)ss->nonce_expiration_time, (unsigned int)server->ctime);
 			}
 		}
 
 		if(generate_new_nonce) {
+			TURN_LOG_FUNC(TURN_LOG_LEVEL_INFO,
+				"%s: Generating new nonce.\n",
+				__FUNCTION__);
 
 			int i = 0;
+
+			log_nonce("Old nonce", ss->nonce);
 
 			if(TURN_RANDOM_SIZE == 8) {
 				for(i=0;i<(NONCE_LENGTH_32BITS>>1);i++) {
@@ -3343,6 +3368,11 @@ static int check_stun_auth(turn_turnserver *server,
 				}
 			}
 			ss->nonce_expiration_time = server->ctime + *(server->stale_nonce);
+
+			log_nonce("New nonce", ss->nonce);
+
+			TURN_LOG_FUNC(TURN_LOG_LEVEL_INFO,
+			    "%s: New nonce expiration time: %04x", __FUNCTION__, (unsigned int)ss->nonce_expiration_time);
 		}
 	}
 
@@ -3471,19 +3501,36 @@ static int check_stun_auth(turn_turnserver *server,
 		bcopy(stun_attr_get_value(sar),nonce,alen);
 		nonce[alen]=0;
 
+		log_nonce("Nonce from ATTR", nonce);
+
 		/* Stale Nonce check: */
 
 		if(new_nonce) {
 			*err_code = 438;
 			*reason = (const uint8_t*)"Wrong nonce";
+
+			TURN_LOG_FUNC(TURN_LOG_LEVEL_INFO,
+				"%s: A new nonce was calculated, so nonce from ATTR is now invalid.\n",
+				__FUNCTION__);
 			return create_challenge_response(ss,tid,resp_constructed,err_code,reason,nbh,method);
 		}
 
 		if(strcmp((char*)ss->nonce,(char*)nonce)) {
 			*err_code = 438;
 			*reason = (const uint8_t*)"Stale nonce";
+
+			TURN_LOG_FUNC(TURN_LOG_LEVEL_INFO,
+				"%s: Nonce from ATTR doesn't match expected nonce.\n",
+				__FUNCTION__);
+
+			log_nonce("Expected nonce", ss->nonce);
+
 			return create_challenge_response(ss,tid,resp_constructed,err_code,reason,nbh,method);
 		}
+
+		TURN_LOG_FUNC(TURN_LOG_LEVEL_INFO,
+			"%s: Nonce is okay :)\n",
+			__FUNCTION__);
 	}
 
 	/* Password */
